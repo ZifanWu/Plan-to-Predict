@@ -1,2 +1,9 @@
-# Plan-to-Predict
-Code accompanying paper "".
+##  Usage
+
+> python main_mbpo.py --env_name 'Ant-v2' --num_epoch 150 
+
+
+
+##  Requirements
+
+- Mujoco 1.5 & 2.0
