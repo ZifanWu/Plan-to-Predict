@@ -1,4 +1,4 @@
-This implementation is heavily based on this repo[https://github.com/Xingyu-Lin/mbpo_pytorch].
+This implementation is heavily based on [this repo](https://github.com/Xingyu-Lin/mbpo_pytorch).
 
 ##  Usage
 
