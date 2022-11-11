@@ -146,11 +146,7 @@ class EnsembleModel(nn.Module):
         self.max_logvar = nn.Parameter((torch.ones((1, self.output_dim)).float() / 2).to(device), requires_grad=False)
         self.min_logvar = nn.Parameter((-torch.ones((1, self.output_dim)).float() * 10).to(device), requires_grad=False)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
-        if args.train_model_by_RL and args.XavierMo:
-            self.apply(init_weights)
-        else:
-            self.apply(init_weights)
-        self.swish = SAC_Swish() if (args.train_model_by_RL and args.ReluMo) else Swish() # NOTE
+        self.apply(init_weights)
 
     def forward(self, x, ret_log_var=False):
         nn1_output = self.swish(self.nn1(x))
@@ -210,13 +206,9 @@ class EnsembleModel(nn.Module):
         self.optimizer.zero_grad()
 
         loss += 0.01 * torch.sum(self.max_logvar) - 0.01 * torch.sum(self.min_logvar)
-        # print('loss:', loss.item())
         if self.use_decay:
             loss += self.get_decay_loss()
         loss.backward()
-        # for name, param in self.named_parameters():
-        #     if param.requires_grad:
-        #         print(name, param.grad.shape, torch.mean(param.grad), param.grad.flatten()[:5])
         self.optimizer.step()
 
 
@@ -268,7 +260,6 @@ class EnsembleDynamicsModel():
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
         for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
-            # print(train_idx.shape) # (n_ens, len(pool))
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[:, start_pos: start_pos + batch_size] # (n_ens, b_size)
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device) # (n_ens, b_size, _dim)
@@ -295,10 +286,7 @@ class EnsembleDynamicsModel():
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
-                    # print('number of model training iteration: {}'.format(epoch))
-                        # wandb.log({"number of model training iteration": epoch}, step=self.m_train_count)
                     break
-            # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
@@ -308,9 +296,7 @@ class EnsembleDynamicsModel():
             improvement = (best - current) / best
             if improvement > 0.01:
                 self._snapshots[i] = (epoch, current)
-                # self._save_state(i)
                 updated = True
-                # improvement = (best - current) / best
         if updated:
             self._epochs_since_update = 0
         else:
@@ -325,10 +311,8 @@ class EnsembleDynamicsModel():
             self.scaler.fit(inputs)
         inputs = self.scaler.transform(inputs)
         ensemble_mean, ensemble_var = [], []
-        # print('11111', inputs.shape[0]) # rollout_batch_size
         for i in range(0, inputs.shape[0], batch_size):
             input = torch.from_numpy(inputs[i:min(i + batch_size, inputs.shape[0])]).float().to(device)
-            # print(input.shape, input[None, :, :].shape) # (1, _dim) (1, 1, _dim)
             b_mean, b_var = self.ensemble_model(input[None, :, :].repeat([self.network_size, 1, 1]), ret_log_var=False)
             ensemble_mean.append(b_mean.detach().cpu().numpy())
             ensemble_var.append(b_var.detach().cpu().numpy())
@@ -353,69 +337,6 @@ class EnsembleDynamicsModel():
 
         return ensemble_mean
 
-    def RLembededtrain(self, env_pool_for_RLtrainmodel, env_pool, holdout_ratio=0., max_epochs_since_update=5):
-        sam_idx = np.random.choice(len(env_pool_for_RLtrainmodel), self.RL_b_size, replace=False)
-        SL_batch = list(itemgetter(*sam_idx)(env_pool.buffer))
-        RL_batch = list(itemgetter(*sam_idx)(env_pool_for_RLtrainmodel.buffer.buffer))
-        state, action, reward, next_state, done = map(np.stack, zip(*SL_batch))
-        m_state, m_action, m_reward, m_next_state, m_done = map(np.stack, zip(*RL_batch))
-        if self.args.use_state_normalization:
-            m_state = (m_state - env_pool_for_RLtrainmodel.s_mean) / (env_pool_for_RLtrainmodel.s_std + self.args.epsilon)
-        # for SL
-        delta_state = next_state - state
-        inputs = np.concatenate((state, action), axis=-1)
-        labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
-        # for RL
-        state_batch = torch.FloatTensor(m_state).to(self.device)
-        next_state_batch = torch.FloatTensor(m_next_state).to(self.device)
-        action_batch = torch.FloatTensor(m_action).to(self.device)
-        reward_batch = torch.FloatTensor(m_reward).to(self.device).unsqueeze(1)
-        mask_batch = torch.FloatTensor(m_done).to(self.device).unsqueeze(1)
-        self._max_epochs_since_update = max_epochs_since_update
-        self._epochs_since_update = 0
-        self._state = {}
-        self._snapshots = {i: (None, 1e10) for i in range(self.network_size)}
-
-        num_holdout = int(inputs.shape[0] * holdout_ratio)
-        permutation = np.random.permutation(inputs.shape[0])
-        inputs, labels = inputs[permutation], labels[permutation]
-        # print(inputs.shape) (len(pool), _dim)
-
-        train_inputs, train_labels = inputs[num_holdout:], labels[num_holdout:]
-        holdout_inputs, holdout_labels = inputs[:num_holdout], labels[:num_holdout]
-
-        self.scaler.fit(train_inputs)
-        train_inputs = self.scaler.transform(train_inputs) # (len(env_pool), _dim)
-        holdout_inputs = self.scaler.transform(holdout_inputs)
-
-        holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
-        holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
-        holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
-        for epoch in itertools.count():
-            train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
-            # print(train_idx.shape) # (n_ens, len(pool))
-            for start_pos in range(0, train_inputs.shape[0], self.args.RLmodel_batch_size):
-                idx = train_idx[:, start_pos: start_pos + self.args.RLmodel_batch_size] # (n_ens, b_size)
-                train_input = torch.from_numpy(train_inputs[idx]).float().to(device) # (n_ens, b_size, _dim)
-                train_label = torch.from_numpy(train_labels[idx]).float().to(device)
-                losses = []
-                mean, logvar = self.ensemble_model(train_input, ret_log_var=True)
-                loss, _ = self.ensemble_model.loss(mean, logvar, train_label)
-                self.ensemble_model.train(loss)
-                losses.append(loss)
-
-            with torch.no_grad():
-                holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
-                _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels, inc_var_loss=False)
-                holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
-                sorted_loss_idx = np.argsort(holdout_mse_losses)
-                self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
-                break_train = self._save_best(epoch, holdout_mse_losses)
-                if break_train:
-                    break
-            # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
-
     def sample(self, inputs):
         # build N(en_mean, en_var)
         en_mean, en_var = self.ensemble_model(inputs.unsqueeze(0).repeat(self.network_size, 1, 1)) # shape(RLmodel_batch_size,)
@@ -432,15 +353,6 @@ class EnsembleDynamicsModel():
         action = en_mean + eps * en_std
         log_prob = normal.log_prob(action)
         return action, log_prob, en_mean, en_std
-
-
-class SAC_Swish(nn.Module):
-    def __init__(self):
-        super(SAC_Swish, self).__init__()
-
-    def forward(self, x): # NOTE
-        x = F.relu(x) # (n_ens, 1, hidden_size)
-        return x
 
 class Swish(nn.Module):
     def __init__(self):
