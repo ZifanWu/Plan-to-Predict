@@ -2,7 +2,7 @@ Our implementation is heavily based on [this repo](https://github.com/Xingyu-Lin
 
 ##  Usage
 
-> python main_mbpo.py --env_name 'Ant-v2' --num_epoch 150 
+> python main_mbpo.py --num_epoch 150 
 
 
 
