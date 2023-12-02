@@ -27,12 +27,12 @@ pip install -e .
 ## Usage
 
 ```
-python main_p2p.py --num_epoch 150
+python src/main_p2p.py --num_epoch 150
 ```
 
 ### Optimal parameters
 
-The optimal parameters are contained in `./configs/` folder.
+The optimal parameters are contained in `.src/configs/` folder.
 
 ## Reference
 
