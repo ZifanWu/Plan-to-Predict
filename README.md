@@ -16,7 +16,7 @@ git clone https://github.com/ZifanWu/Plan-to-Predict.git
 3. Create a conda environment and install Plan-to-Predict
 
 ```
-cd Plan-to-Predict
+cd src/Plan-to-Predict
 conda env create -f environment/gpu-env.yml
 conda activate p2p
 pip install -e .
