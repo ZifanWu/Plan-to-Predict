@@ -35,7 +35,7 @@ def get_humanoid_args(parser):
     parser.add_argument('--TrSTOP_Aver_Interval', type=int, default=1)
     parser.add_argument('--TrSTOP_TrgtRet', default=6000)
     parser.add_argument('--DeterMoForMPC', default=False)
-    parser.add_argument('--DeterPoForMPC', default=True)
+    parser.add_argument('--DeterPoForMPC', default=False)
 
     parser.add_argument('--model_retain_epochs', default=5, metavar='A', help='retain epochs')
     parser.add_argument('--num_train_repeat', type=int, default=20, metavar='A',
